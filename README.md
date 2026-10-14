@@ -110,6 +110,3 @@ sales-etl-pipeline/
 - Add a data-quality summary (rejects grouped by reason)
 - Schedule it with cron or Airflow
 
-## License
-
-MIT
