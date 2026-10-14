@@ -1,0 +1,14 @@
+order_id,order_date,customer_id,product,category,quantity,unit_price,country
+1001,2024-03-01,C01,laptop,electronics,1,$899.99,in
+1002,2024-03-01,C02,Wireless Mouse,electronics,2,25.50,us
+1003,01/03/2024,C03,notebook,stationery,10,2.00,in
+1004,2024-03-02,C01,Desk Lamp,home,1,45.00,uk
+1005,2024-03-02,C04,laptop,electronics,1,"1,050.00",us
+1006,2024-03-03,,Pen Set,stationery,3,7.25,in
+1007,2024-03-03,C05,Desk Lamp,home,-2,45.00,uk
+1008,not-a-date,C06,Notebook,stationery,5,2.00,in
+1002,2024-03-04,C02,Wireless Mouse,electronics,2,25.50,us
+1009,2024-03-04,C07,  pen set ,stationery,4,7.25,IN
+1010,2024-03-05,C08,Headphones,electronics,abc,59.99,uk
+1011,2024-03-05,C09,Headphones,electronics,2,59.99,us
+1012,05/03/2024,C10,Desk Lamp,home,2,$45.00,in
