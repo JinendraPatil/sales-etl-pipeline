@@ -5,27 +5,27 @@ rows into PostgreSQL, saves the rejected rows with the reason, and prints SQL re
 
 ## How it works
 
-1. **Extract** (`etl/extract.py`): reads about 5,000 rows from `data/raw/orders.csv`
-2. **Transform** (`etl/transform.py`): cleans each row and checks it against the rules below
-3. **Load** (`etl/load.py`): saves good rows to the `orders` table and bad rows to
-   `rejected_orders` in PostgreSQL
-4. **Report** (`etl/report.py`): runs SQL queries for revenue by category, top products,
+1. **Extract** (etl/extract.py): reads about 5,000 rows from data/raw/orders.csv
+2. **Transform** (etl/transform.py): cleans each row and checks it against the rules below
+3. **Load** (etl/load.py): saves good rows to the orders table and bad rows to
+   rejected_orders in PostgreSQL
+4. **Report** (etl/report.py): runs SQL queries for revenue by category, top products,
    monthly revenue and rejected rows by reason
 
-`etl/pipeline.py` runs all the steps and writes log messages.
+etl/pipeline.py runs all the steps and writes log messages.
 
 ## Cleaning and validation rules
 
 A row is rejected if:
 
-- `order_id`, `customer_id` or `product` is missing
-- the date is not a real date in `YYYY-MM-DD` or `DD/MM/YYYY` format
-- `quantity` is not a positive whole number
-- `unit_price` is not a number or is negative
-- the `order_id` has already appeared (the first one is kept)
+- order_id, customer_id or product is missing
+- the date is not a real date in YYYY-MM-DD or DD/MM/YYYY format
+- quantity is not a positive whole number
+- unit_price is not a number or is negative
+- the order_id has already appeared (the first one is kept)
 
 Valid rows are also cleaned: spaces are removed, text is capitalised properly,
-`$` and `,` are removed from prices, and `total_amount` is calculated.
+$ and , are removed from prices, and total_amount is calculated.
 
 ## Data quality checks
 
@@ -43,7 +43,7 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Create a PostgreSQL database called `sales_db`, then copy `.env.example` to `.env`
+Create a PostgreSQL database called sales_db, then copy .env.example to .env
 and put your password in it.
 
 ## Run
@@ -53,7 +53,7 @@ python generate_data.py
 python -m etl.pipeline
 ```
 
-`generate_data.py` creates a messy sample file with about 5,000 rows.
+generate_data.py creates a messy sample file with about 5,000 rows.
 
 ## Run tests
 
@@ -73,12 +73,12 @@ INFO Loaded 4394 orders and 756 rejected rows
 
 ## If something fails
 
-- **Pipeline failed: DB_URL is not set:** create the `.env` file (see `.env.example`)
-- **password authentication failed:** the password in `.env` is wrong
+- **Pipeline failed: DB_URL is not set:** create the .env file (see .env.example)
+- **password authentication failed:** the password in .env is wrong
 - **Too many bad rows:** the input file has a problem, so check the rejected reasons
   and fix the source. Nothing is loaded in this case.
-- **FileNotFoundError:** run `python generate_data.py` or pass the file with `--input`
-- **Tests fail:** run `python -m pytest` and read which rule broke
+- **FileNotFoundError:** run python generate_data.py or pass the file with --input
+- **Tests fail:** run python -m pytest and read which rule broke
 
 ## Tech used
 
