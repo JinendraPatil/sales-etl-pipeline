@@ -1,60 +1,58 @@
 # Sales ETL Pipeline
 
-A small, readable **ETL (Extract → Transform → Load)** pipeline in pure Python.
-It takes a messy sales-orders CSV, cleans and validates it, loads it into a
-SQLite "warehouse", and prints SQL analytics reports.
+A small ETL (Extract, Transform, Load) pipeline written in Python. It reads a messy sales orders CSV file, cleans and validates the data, loads it into a SQLite database, and prints a few SQL reports.
 
-Built as a data-engineering practice project. It uses only the Python standard
-library (plus `pytest` for tests), so it runs anywhere with no setup.
+I built this as a practice project for data engineering. It only uses the Python standard library (plus pytest for tests), so there is nothing extra to set up.
 
-## What it does
+## How it works
 
-```
-data/raw/orders.csv ──► extract ──► transform ──► load ──► report
-                                      │             │
-                                      │             └─► data/warehouse.db (SQLite)
-                                      └─► data/rejected_rows.csv (bad rows + reason)
-```
+1. **Extract** (`etl/extract.py`): reads rows from `data/raw/orders.csv`.
+2. **Transform** (`etl/transform.py`): cleans the data. It parses dates in two formats, removes `$` and `,` from prices, normalises text, validates each row and removes duplicate orders.
+3. **Load** (`etl/load.py`): saves valid rows into SQLite (`data/warehouse.db`). Bad rows are written to `data/rejected_rows.csv` along with the reason.
+4. **Report** (`etl/report.py`): runs SQL queries for revenue by category, top products and daily revenue.
 
-| Stage       | File                | Responsibility |
-|-------------|---------------------|----------------|
-| Extract     | `etl/extract.py`    | Stream rows from CSV with `csv.DictReader` |
-| Transform   | `etl/transform.py`  | Parse dates (2 formats), strip `$`/`,` from prices, normalise text, validate, de-duplicate |
-| Load        | `etl/load.py`       | **Idempotent upsert** into SQLite; write rejected rows to CSV |
-| Report      | `etl/report.py`     | SQL aggregations: revenue by category, top products, daily revenue |
-| Entry point | `etl/pipeline.py`   | CLI that wires the stages together with logging |
+`etl/pipeline.py` is the entry point that runs all the steps with logging. Tests are in the `tests` folder.
 
-## Data-quality rules
+## Validation rules
 
-Rows are **rejected** (and saved with a `reject_reason`) when:
+A row is rejected if:
 
 - `order_id`, `customer_id` or `product` is missing
-- the date is not `YYYY-MM-DD` or `DD/MM/YYYY`
-- `quantity` is not a positive integer
+- the date is not in `YYYY-MM-DD` or `DD/MM/YYYY` format
+- `quantity` is not a positive whole number
 - `unit_price` is not a number or is negative
-- the `order_id` was already seen (first occurrence wins)
+- the `order_id` has already appeared (the first one is kept)
 
-## Quick start
+## Setup
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/JinendraPatil/sales-etl-pipeline.git
 cd sales-etl-pipeline
 
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate        # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-python -m etl.pipeline           # run the pipeline on the sample data
-python -m pytest                 # run the tests
 ```
 
-Custom paths:
+## Run
+
+```bash
+python -m etl.pipeline
+```
+
+You can also pass your own file paths:
 
 ```bash
 python -m etl.pipeline --input data/raw/orders.csv --db data/warehouse.db --rejects data/rejected_rows.csv
 ```
 
-### Sample output
+## Run tests
+
+```bash
+python -m pytest
+```
+
+## Sample output
 
 ```
 INFO Extracted 13 rows from data/raw/orders.csv
@@ -71,42 +69,4 @@ Laptop              2 units    1949.99
 Desk Lamp           3 units     135.00
 Headphones          2 units     119.98
 ```
-
-## Design decisions
-
-- **Idempotent loads:** `INSERT ... ON CONFLICT DO UPDATE` means re-running the
-  pipeline never creates duplicate rows, which is essential for real pipelines
-  that get retried.
-- **Rejects are kept, not dropped:** bad rows go to `rejected_rows.csv` with a
-  reason so data issues can be investigated.
-- **Small pure functions:** each parser (`parse_date`, `parse_price`, ...) is
-  independently testable.
-- **ISO dates in the warehouse:** keeps date sorting and grouping simple in SQL.
-
-## Project structure
-
-```
-sales-etl-pipeline/
-├── data/raw/orders.csv      # sample messy input
-├── etl/
-│   ├── extract.py
-│   ├── transform.py
-│   ├── load.py
-│   ├── report.py
-│   └── pipeline.py
-├── tests/
-│   ├── test_transform.py
-│   └── test_load.py
-├── pytest.ini
-├── requirements.txt
-└── README.md
-```
-
-## Ideas for extension
-
-- Add a `--min-amount` CLI filter or a new validation rule
-- Add a `monthly_revenue` or `revenue_by_country` report
-- Support a second input format (JSON / Parquet)
-- Add a data-quality summary (rejects grouped by reason)
-- Schedule it with cron or Airflow
 
