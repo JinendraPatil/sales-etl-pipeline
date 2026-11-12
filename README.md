@@ -6,22 +6,22 @@ I built this as a practice project for data engineering. It only uses the Python
 
 ## How it works
 
-1. **Extract** (`etl/extract.py`): reads rows from `data/raw/orders.csv`.
-2. **Transform** (`etl/transform.py`): cleans the data. It parses dates in two formats, removes `$` and `,` from prices, normalises text, validates each row and removes duplicate orders.
-3. **Load** (`etl/load.py`): saves valid rows into SQLite (`data/warehouse.db`). Bad rows are written to `data/rejected_rows.csv` along with the reason.
-4. **Report** (`etl/report.py`): runs SQL queries for revenue by category, top products and daily revenue.
+1. **Extract** (etl/extract.py): reads rows from data/raw/orders.csv.
+2. **Transform** (etl/transform.py): cleans the data. It parses dates in two formats, removes $ and , from prices, normalises text, validates each row and removes duplicate orders.
+3. **Load** (etl/load.py): saves valid rows into SQLite (data/warehouse.db). Bad rows are written to data/rejected_rows.csv along with the reason.
+4. **Report** (etl/report.py): runs SQL queries for revenue by category, top products and daily revenue.
 
-`etl/pipeline.py` is the entry point that runs all the steps with logging. Tests are in the `tests` folder.
+etl/pipeline.py is the entry point that runs all the steps with logging. Tests are in the tests folder.
 
 ## Validation rules
 
 A row is rejected if:
 
-- `order_id`, `customer_id` or `product` is missing
-- the date is not in `YYYY-MM-DD` or `DD/MM/YYYY` format
-- `quantity` is not a positive whole number
-- `unit_price` is not a number or is negative
-- the `order_id` has already appeared (the first one is kept)
+- order_id, customer_id or product is missing
+- the date is not in YYYY-MM-DD or DD/MM/YYYY format
+- quantity is not a positive whole number
+- unit_price is not a number or is negative
+- the order_id has already appeared (the first one is kept)
 
 ## Setup
 
