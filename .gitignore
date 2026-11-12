@@ -1,6 +1,5 @@
-__pycache__/
-*.pyc
-.pytest_cache/
+venv/
 .venv/
-data/warehouse.db
-data/rejected_rows.csv
+.env
+__pycache__/
+.pytest_cache/

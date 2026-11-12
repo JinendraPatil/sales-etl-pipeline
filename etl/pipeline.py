@@ -1,43 +1,59 @@
-"""Command-line entry point: extract -> transform -> load -> report."""
 import argparse
 import logging
+import sys
 
-from etl.extract import read_csv
-from etl.load import connect, load_orders, write_rejects
-from etl.report import print_report
+from etl.extract import extract
+from etl.load import count_rows, get_connection, load
+from etl.report import print_reports
 from etl.transform import transform
 
-log = logging.getLogger("etl")
+MAX_REJECT_RATE = 0.30   # stop the pipeline if more than 30% of rows are bad
 
 
-def run(input_path: str, db_path: str, rejects_path: str) -> None:
-    raw_rows = list(read_csv(input_path))
-    log.info("Extracted %d rows from %s", len(raw_rows), input_path)
+def run(input_path):
+    rows = extract(input_path)
+    logging.info("Extracted %d rows from %s", len(rows), input_path)
 
-    valid, rejected = transform(raw_rows)
-    log.info("Transformed: %d valid, %d rejected", len(valid), len(rejected))
+    valid, rejected = transform(rows)
+    logging.info("Transformed: %d valid, %d rejected", len(valid), len(rejected))
 
-    conn = connect(db_path)
-    loaded = load_orders(conn, valid)
-    log.info("Loaded %d rows into %s", loaded, db_path)
+    # Check 1: no row was lost during transform
+    if len(valid) + len(rejected) != len(rows):
+        raise RuntimeError("Row count mismatch after transform")
 
-    write_rejects(rejects_path, rejected)
-    if rejected:
-        log.warning("Rejected rows written to %s", rejects_path)
+    # Check 2: too many bad rows means something is wrong with the file
+    if rows and len(rejected) / len(rows) > MAX_REJECT_RATE:
+        raise RuntimeError(
+            f"Too many bad rows ({len(rejected)} of {len(rows)}). Nothing was loaded."
+        )
 
-    print_report(conn)
-    conn.close()
+    conn = get_connection()
+    try:
+        load(conn, valid, rejected)
+
+        # Check 3: the database has the same number of rows we sent
+        if count_rows(conn, "orders") != len(valid):
+            raise RuntimeError("orders table row count does not match")
+        if count_rows(conn, "rejected_orders") != len(rejected):
+            raise RuntimeError("rejected_orders table row count does not match")
+        logging.info("Loaded %d orders and %d rejected rows", len(valid), len(rejected))
+
+        print_reports(conn)
+    finally:
+        conn.close()
 
 
-def main() -> None:
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Sales ETL pipeline")
     parser.add_argument("--input", default="data/raw/orders.csv")
-    parser.add_argument("--db", default="data/warehouse.db")
-    parser.add_argument("--rejects", default="data/rejected_rows.csv")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run(args.input, args.db, args.rejects)
+    try:
+        run(args.input)
+    except Exception as error:
+        logging.error("Pipeline failed: %s", error)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

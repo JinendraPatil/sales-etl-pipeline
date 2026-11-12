@@ -1,103 +1,84 @@
-"""Transform step: clean, validate and de-duplicate raw rows."""
-from dataclasses import dataclass
+import math
 from datetime import datetime
-from typing import Iterable
 
-DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y")
-
-
-class ValidationError(ValueError):
-    """Raised when a raw row cannot be turned into a valid Order."""
+REQUIRED_FIELDS = ["order_id", "customer_id", "product"]
+DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y"]
 
 
-@dataclass(frozen=True)
-class Order:
-    order_id: str
-    order_date: str      # ISO format: YYYY-MM-DD
-    customer_id: str
-    product: str
-    category: str
-    quantity: int
-    unit_price: float
-    country: str
-
-    @property
-    def total_amount(self) -> float:
-        return round(self.quantity * self.unit_price, 2)
+def clean_text(value):
+    """Turn None into an empty string and remove spaces at both ends."""
+    return (value or "").strip()
 
 
-def parse_date(value: str) -> str:
-    """Accept several date formats and return ISO YYYY-MM-DD."""
-    value = (value or "").strip()
-    for fmt in DATE_FORMATS:
+def parse_date(value):
+    for date_format in DATE_FORMATS:
         try:
-            return datetime.strptime(value, fmt).date().isoformat()
+            return datetime.strptime(clean_text(value), date_format).date()
         except ValueError:
-            continue
-    raise ValidationError(f"invalid date: {value!r}")
+            pass
+    raise ValueError("invalid order_date")
 
 
-def parse_price(value: str) -> float:
-    """Handle values like ' $12.50 ' or '1,200.00'."""
-    cleaned = (value or "").strip().replace("$", "").replace(",", "")
+def parse_quantity(value):
     try:
-        price = float(cleaned)
+        quantity = int(clean_text(value))
     except ValueError:
-        raise ValidationError(f"invalid unit_price: {value!r}")
-    if price < 0:
-        raise ValidationError(f"negative unit_price: {price}")
-    return price
+        raise ValueError("invalid quantity")
+    if quantity <= 0:
+        raise ValueError("invalid quantity")
+    return quantity
 
 
-def parse_quantity(value: str) -> int:
+def parse_price(value):
+    text = clean_text(value).replace("$", "").replace(",", "")
     try:
-        qty = int((value or "").strip())
+        price = float(text)
     except ValueError:
-        raise ValidationError(f"invalid quantity: {value!r}")
-    if qty <= 0:
-        raise ValidationError(f"quantity must be positive: {qty}")
-    return qty
+        raise ValueError("invalid unit_price")
+    if not math.isfinite(price) or price < 0:
+        raise ValueError("invalid unit_price")
+    return round(price, 2)
 
 
-def clean_row(raw: dict) -> Order:
-    """Convert one raw CSV row into an Order, or raise ValidationError."""
-    required = ("order_id", "customer_id", "product")
-    for field in required:
-        if not (raw.get(field) or "").strip():
-            raise ValidationError(f"missing {field}")
+def clean_row(row):
+    """Clean one row. Raises ValueError with the reason if the row is bad."""
+    for field in REQUIRED_FIELDS:
+        if not clean_text(row.get(field)):
+            raise ValueError(f"missing {field}")
 
-    return Order(
-        order_id=raw["order_id"].strip(),
-        order_date=parse_date(raw.get("order_date", "")),
-        customer_id=raw["customer_id"].strip(),
-        product=raw["product"].strip().title(),
-        category=(raw.get("category") or "Unknown").strip().title(),
-        quantity=parse_quantity(raw.get("quantity", "")),
-        unit_price=parse_price(raw.get("unit_price", "")),
-        country=(raw.get("country") or "Unknown").strip().upper(),
-    )
+    quantity = parse_quantity(row.get("quantity"))
+    unit_price = parse_price(row.get("unit_price"))
+
+    return {
+        "order_id": clean_text(row["order_id"]).upper(),
+        "order_date": parse_date(row.get("order_date")),
+        "customer_id": clean_text(row["customer_id"]).upper(),
+        "product": clean_text(row["product"]).title(),
+        "category": clean_text(row.get("category")).title() or "Unknown",
+        "quantity": quantity,
+        "unit_price": unit_price,
+        "total_amount": round(quantity * unit_price, 2),
+    }
 
 
-def transform(rows: Iterable[dict]) -> tuple[list[Order], list[tuple[dict, str]]]:
-    """Return (valid_orders, rejected) where rejected = [(raw_row, reason)].
+def transform(rows):
+    """Split rows into valid rows and rejected rows (with the reason)."""
+    valid = []
+    rejected = []
+    seen_ids = set()
 
-    Duplicate order_ids are rejected: the first occurrence wins.
-    """
-    valid: list[Order] = []
-    rejected: list[tuple[dict, str]] = []
-    seen: set[str] = set()
-
-    for raw in rows:
+    for row_number, row in enumerate(rows, start=2):   # line 1 is the header
         try:
-            order = clean_row(raw)
-        except ValidationError as err:
-            rejected.append((raw, str(err)))
-            continue
-
-        if order.order_id in seen:
-            rejected.append((raw, "duplicate order_id"))
-            continue
-        seen.add(order.order_id)
-        valid.append(order)
+            clean = clean_row(row)
+            if clean["order_id"] in seen_ids:
+                raise ValueError("duplicate order_id")
+            seen_ids.add(clean["order_id"])
+            valid.append(clean)
+        except ValueError as error:
+            rejected.append({
+                "row_number": row_number,
+                "reason": str(error),
+                "raw_data": row,
+            })
 
     return valid, rejected

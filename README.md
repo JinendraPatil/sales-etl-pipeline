@@ -1,72 +1,85 @@
 # Sales ETL Pipeline
 
-A small ETL (Extract, Transform, Load) pipeline written in Python. It reads a messy sales orders CSV file, cleans and validates the data, loads it into a SQLite database, and prints a few SQL reports.
-
-I built this as a practice project for data engineering. It only uses the Python standard library (plus pytest for tests), so there is nothing extra to set up.
+A Python ETL pipeline that cleans a messy sales orders CSV file, loads the valid
+rows into PostgreSQL, saves the rejected rows with the reason, and prints SQL reports.
 
 ## How it works
 
-1. **Extract** (etl/extract.py): reads rows from data/raw/orders.csv.
-2. **Transform** (etl/transform.py): cleans the data. It parses dates in two formats, removes $ and , from prices, normalises text, validates each row and removes duplicate orders.
-3. **Load** (etl/load.py): saves valid rows into SQLite (data/warehouse.db). Bad rows are written to data/rejected_rows.csv along with the reason.
-4. **Report** (etl/report.py): runs SQL queries for revenue by category, top products and daily revenue.
+1. **Extract** (`etl/extract.py`): reads about 5,000 rows from `data/raw/orders.csv`
+2. **Transform** (`etl/transform.py`): cleans each row and checks it against the rules below
+3. **Load** (`etl/load.py`): saves good rows to the `orders` table and bad rows to
+   `rejected_orders` in PostgreSQL
+4. **Report** (`etl/report.py`): runs SQL queries for revenue by category, top products,
+   monthly revenue and rejected rows by reason
 
-etl/pipeline.py is the entry point that runs all the steps with logging. Tests are in the tests folder.
+`etl/pipeline.py` runs all the steps and writes log messages.
 
-## Validation rules
+## Cleaning and validation rules
 
 A row is rejected if:
 
-- order_id, customer_id or product is missing
-- the date is not in YYYY-MM-DD or DD/MM/YYYY format
-- quantity is not a positive whole number
-- unit_price is not a number or is negative
-- the order_id has already appeared (the first one is kept)
+- `order_id`, `customer_id` or `product` is missing
+- the date is not a real date in `YYYY-MM-DD` or `DD/MM/YYYY` format
+- `quantity` is not a positive whole number
+- `unit_price` is not a number or is negative
+- the `order_id` has already appeared (the first one is kept)
+
+Valid rows are also cleaned: spaces are removed, text is capitalised properly,
+`$` and `,` are removed from prices, and `total_amount` is calculated.
+
+## Data quality checks
+
+- Valid rows + rejected rows must equal the rows read from the file
+- The pipeline stops if more than 30% of rows are rejected
+- Row counts in PostgreSQL must match the rows that were loaded
 
 ## Setup
 
-```bash
+```
 git clone https://github.com/JinendraPatil/sales-etl-pipeline.git
 cd sales-etl-pipeline
-
-python -m venv .venv
-source .venv/bin/activate        # On Windows: .venv\Scripts\activate
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+Create a PostgreSQL database called `sales_db`, then copy `.env.example` to `.env`
+and put your password in it.
+
 ## Run
 
-```bash
+```
+python generate_data.py
 python -m etl.pipeline
 ```
 
-You can also pass your own file paths:
-
-```bash
-python -m etl.pipeline --input data/raw/orders.csv --db data/warehouse.db --rejects data/rejected_rows.csv
-```
+`generate_data.py` creates a messy sample file with about 5,000 rows.
 
 ## Run tests
 
-```bash
+```
 python -m pytest
 ```
+
+Tests also run automatically on every push using GitHub Actions.
 
 ## Sample output
 
 ```
-INFO Extracted 13 rows from data/raw/orders.csv
-INFO Transformed: 8 valid, 5 rejected
-INFO Loaded 8 rows into data/warehouse.db
-
-=== Revenue by category ===
-Electronics        2120.97
-Home                135.00
-Stationery           49.00
-
-=== Top 3 products ===
-Laptop              2 units    1949.99
-Desk Lamp           3 units     135.00
-Headphones          2 units     119.98
+INFO Extracted 5150 rows from data/raw/orders.csv
+INFO Transformed: 4394 valid, 756 rejected
+INFO Loaded 4394 orders and 756 rejected rows
 ```
 
+## If something fails
+
+- **Pipeline failed: DB_URL is not set:** create the `.env` file (see `.env.example`)
+- **password authentication failed:** the password in `.env` is wrong
+- **Too many bad rows:** the input file has a problem, so check the rejected reasons
+  and fix the source. Nothing is loaded in this case.
+- **FileNotFoundError:** run `python generate_data.py` or pass the file with `--input`
+- **Tests fail:** run `python -m pytest` and read which rule broke
+
+## Tech used
+
+Python, PostgreSQL, psycopg2, pytest, Git, GitHub Actions

@@ -1,67 +1,67 @@
-"""Load step: write clean orders into SQLite (idempotent upsert)."""
-import csv
-import sqlite3
-from pathlib import Path
-from typing import Iterable
+import json
+import os
 
-from etl.transform import Order
+import psycopg2
+from dotenv import load_dotenv
+from psycopg2.extras import execute_values
 
-SCHEMA = """
+CREATE_TABLES = """
 CREATE TABLE IF NOT EXISTS orders (
-    order_id      TEXT PRIMARY KEY,
-    order_date    TEXT NOT NULL,
-    customer_id   TEXT NOT NULL,
-    product       TEXT NOT NULL,
-    category      TEXT NOT NULL,
-    quantity      INTEGER NOT NULL,
-    unit_price    REAL NOT NULL,
-    total_amount  REAL NOT NULL,
-    country       TEXT NOT NULL
+    order_id     TEXT PRIMARY KEY,
+    order_date   DATE NOT NULL,
+    customer_id  TEXT NOT NULL,
+    product      TEXT NOT NULL,
+    category     TEXT NOT NULL,
+    quantity     INT NOT NULL,
+    unit_price   NUMERIC(10, 2) NOT NULL,
+    total_amount NUMERIC(12, 2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rejected_orders (
+    id         SERIAL PRIMARY KEY,
+    source_row INT,
+    reason     TEXT,
+    raw_data   TEXT
 );
 """
 
-UPSERT = """
-INSERT INTO orders (order_id, order_date, customer_id, product, category,
-                    quantity, unit_price, total_amount, country)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(order_id) DO UPDATE SET
-    order_date   = excluded.order_date,
-    customer_id  = excluded.customer_id,
-    product      = excluded.product,
-    category     = excluded.category,
-    quantity     = excluded.quantity,
-    unit_price   = excluded.unit_price,
-    total_amount = excluded.total_amount,
-    country      = excluded.country;
-"""
+
+def get_connection():
+    load_dotenv()
+    url = os.getenv("DB_URL")
+    if not url:
+        raise RuntimeError("DB_URL is not set. Create a .env file (see .env.example).")
+    return psycopg2.connect(url)
 
 
-def connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.execute(SCHEMA)
-    return conn
+def load(conn, valid, rejected):
+    """Replace the contents of both tables. Everything happens in one transaction."""
+    with conn:                                   # commit if OK, rollback if error
+        with conn.cursor() as cur:
+            cur.execute(CREATE_TABLES)
+            cur.execute("TRUNCATE orders, rejected_orders RESTART IDENTITY")
+
+            if valid:
+                execute_values(
+                    cur,
+                    """INSERT INTO orders (order_id, order_date, customer_id, product,
+                                           category, quantity, unit_price, total_amount)
+                       VALUES %s""",
+                    [(r["order_id"], r["order_date"], r["customer_id"], r["product"],
+                      r["category"], r["quantity"], r["unit_price"], r["total_amount"])
+                     for r in valid],
+                )
+
+            if rejected:
+                execute_values(
+                    cur,
+                    "INSERT INTO rejected_orders (source_row, reason, raw_data) VALUES %s",
+                    [(r["row_number"], r["reason"], json.dumps(r["raw_data"]))
+                     for r in rejected],
+                )
 
 
-def load_orders(conn: sqlite3.Connection, orders: Iterable[Order]) -> int:
-    """Upsert orders. Running the pipeline twice will not create duplicates."""
-    rows = [
-        (o.order_id, o.order_date, o.customer_id, o.product, o.category,
-         o.quantity, o.unit_price, o.total_amount, o.country)
-        for o in orders
-    ]
-    conn.executemany(UPSERT, rows)
-    conn.commit()
-    return len(rows)
-
-
-def write_rejects(path: str | Path, rejected: list[tuple[dict, str]]) -> None:
-    """Save rejected rows with the reason, so bad data can be investigated."""
-    if not rejected:
-        return
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rejected[0][0].keys()) + ["reject_reason"]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for raw, reason in rejected:
-            writer.writerow({**raw, "reject_reason": reason})
+def count_rows(conn, table):
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) FROM {table}")
+        return cur.fetchone()[0]
